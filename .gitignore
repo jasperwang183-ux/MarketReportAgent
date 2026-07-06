@@ -1,0 +1,40 @@
+# Secrets / credentials
+.env
+*.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+client_secret*.json
+token.json
+*_credentials*
+*_secret*
+*_password*
+*api_key*
+
+# Generated data and reports
+data/
+output/
+
+# Personal financial data (spliced into the prompt at generation time)
+portfolio.md
+
+# Internal session handoff notes (trade history, strategy evolution)
+handoffv*.md
+handoff*.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
