@@ -1,77 +1,111 @@
 # Market Report Agent
 
-An automated, two-tier pre-market research system for a thesis-driven ETF
-portfolio. Every morning it pulls market data, runs targeted web research
-through Claude, checks a battery of quantified "kill signals" against the
-investment thesis, and delivers a report by email — a deep weekly brief, and a
-lean daily pulse that only shouts when something actually crosses a tripwire.
-
-Built as a real system managing a real portfolio, not a demo: it has survived
-data-provider outages, empty-output incidents, and model migrations, and the
-design carries those scars deliberately.
+An automated pre-market research system for an ETF portfolio built around an
+AI-infrastructure investment thesis. Each morning it pulls market data, has
+Claude run a set of targeted web searches, checks the thesis against
+pre-defined warning conditions ("kill signals"), and emails the result. There
+are two report tiers: a full weekly brief and a short daily check.
 
 ## How it works
 
 ```
 fetch_data.py            generate_brief.py / daily_pulse.py         send_email.py
 ┌────────────────┐       ┌──────────────────────────────────┐      ┌───────────┐
-│ yfinance:      │       │ Claude + server-side web search  │      │ Gmail     │
+│ yfinance:      │       │ Claude + web search              │      │ Gmail     │
 │ price, RSI,    │──────▶│  · thesis spec (CLAUDE.md)       │─────▶│ HTML      │
 │ volume, VIX,   │       │  · market snapshot + deltas      │      │ email     │
-│ 52w highs      │       │  · persistent signal state       │      └───────────┘
+│ 52w highs      │       │  · saved signal state            │      └───────────┘
 └───────┬────────┘       └───────────────┬──────────────────┘
-        │                                │ hidden JSON write-back
+        │                                │ signal-state write-back
         ▼                                ▼
   data/history/*.json          data/signal_state.json
-  (day-over-day deltas)        (kill-signal state machine)
+  (day-over-day deltas)        (signal readings between runs)
 ```
 
-**Two tiers, priced to their jobs:**
+1. `fetch_data.py` pulls price, RSI, volume, VIX, and 52-week highs from
+   yfinance into `data/snapshot.json`, and archives a daily copy so the next
+   run can compute day-over-day changes.
+2. `generate_brief.py` (weekly) or `daily_pulse.py` (daily) sends the
+   snapshot, the thesis spec in `CLAUDE.md`, and the saved signal state to
+   Claude, which runs its web searches and writes the report. Updated signal
+   readings are written back to `data/signal_state.json`, so classifications
+   carry over between runs instead of being re-derived each time.
+3. `send_email.py` delivers the report via Gmail.
+
+The two tiers:
 
 | | Weekly brief | Daily pulse |
 |---|---|---|
 | Model | Claude Opus | Claude Sonnet |
-| Scope | Full 9-section deep report: macro, company intelligence mapped to ETF exposure, all signals re-searched, buy candidates, radar | Tripwire check: holdings quick-read + fast-moving signals only |
-| Search budget | Full sweep, every signal | ≤2 searches, plus one authorized escalation the morning after a tracked earnings report |
-| Voice | Authoritative reference | Exception-based — "🟢 ALL QUIET" on a normal day, shouts only on a tripwire |
+| Scope | Full 9-section report: macro context, company news mapped to ETF exposure, every signal re-checked, buy candidates, watchlist | Short check: how holdings moved since the prior session, plus the fast-moving signals |
+| Web searches | Every signal searched fresh | At most 2, plus one extra the morning after a tracked earnings report |
+| On a normal day | Full report | A few lines saying nothing changed |
 
-## The signal framework
+## The thesis
 
-The thesis (in [CLAUDE.md](CLAUDE.md)) is only allowed to survive on evidence.
-Each layer of the thesis carries **kill signals** — pre-committed, numeric
-conditions under which the position is wrong — plus softer **tripwires** that
-define when a signal moves from CLEAR to APPROACHING and the daily starts
-alerting.
+The portfolio is built on one idea: AI software is improving faster than the
+physical infrastructure it runs on, so the durable value is in the
+infrastructure layers rather than the applications. The thesis has four
+layers, each mapped to ETFs:
 
-Design decisions worth stealing:
+1. **Compute / silicon** — chip design and manufacturing.
+2. **Memory bandwidth** — the DRAM/HBM makers; the highest-conviction layer.
+3. **Power / grid** — electricity and grid capacity for datacenters; mostly
+   still an acknowledged gap in the portfolio.
+4. **Leveraged QQQ** — a tactical layer that scales leverage up during
+   pullbacks and back down near highs.
 
-- **Quantified proximity, never vibes.** A signal is never just "CLEAR" — it's
-  "48% of kill" or "12 pts above the floor". The distance is the information.
-- **Deterministic where possible, model where necessary.** The scripts compute
-  everything computable (consecutive-month streaks, rotation zones,
-  guidance-count kill conditions, calendar escalations); the model only
-  classifies what genuinely needs judgment. A carried-forward "month 2 of 3"
-  is a fact in the state file, not a memory the model might drift on.
-- **Honest epistemics, enforced.** Every researched claim carries
-  `[sources][confidence — basis]` tags with anti-inflation rules (single-source
-  is never "high"). The state file tracks `as_of` and `searched_on` separately,
-  so a stale reading is labeled stale instead of silently re-asserted. Every
-  high-conviction call must include a falsifiable counter-argument.
-- **Earnings-calendar escalation.** The daily's search budget is capped, but
-  the weekly maintains a calendar of the earnings dates that move the
-  demand-side signals — and the morning after one, the daily is granted one
-  extra authorized search for exactly that reading.
-- **Fail loudly.** All-null data snapshots are never archived (they'd poison
-  the next day's delta baseline), empty model output aborts the pipeline before
-  the email step, and any stage failure triggers an alert email to the owner.
+The full thesis — the reasoning behind each layer, monitoring lists, and the
+report formats — lives in [CLAUDE.md](CLAUDE.md), which is also the spec the
+agent reads at generation time.
+
+## Kill signals and how to read them
+
+A kill signal is a numeric condition, written down in advance, under which
+part of the thesis should be considered wrong. For example: "DRAM spot price
+falls 10% per month for 3 consecutive months." Writing the exit conditions
+down ahead of time keeps the system from rationalizing bad news later.
+
+Each signal has two thresholds:
+
+- the **kill** condition — the full trigger, and
+- a **tripwire** — a softer early-warning level some distance before it.
+
+Every report classifies every signal as one of three statuses:
+
+- `CLEAR` — not near the tripwire
+- `APPROACHING` — past the tripwire but not the trigger; this is what makes
+  the daily pulse start alerting
+- `TRIGGERED` — the kill condition is fully met
+
+Alongside the status, each signal reports its current reading and its
+distance from the trigger (e.g. "helium $145 vs $300 trigger — 48% of the
+way"), so a comfortable CLEAR reads differently from a close one. The
+tripwire numbers are plain text in CLAUDE.md and can be tuned: tighter for
+earlier warnings, looser for fewer alerts.
+
+## Other conventions
+
+- The scripts compute everything that can be computed deterministically
+  (consecutive-month streaks, drawdown zones, guidance counts, earnings-day
+  escalations); the model only classifies what needs judgment.
+- Every claim from web research carries a source-and-confidence tag, and
+  single-source claims are never marked high confidence. Stale readings are
+  labeled as stale rather than re-asserted.
+- Actionable recommendations include a specific counter-argument — the
+  concrete way the call could be wrong.
+- Failures are surfaced rather than papered over: all-null data snapshots are
+  not archived (they would corrupt the next day's deltas), empty model output
+  stops the pipeline before the email step, and a failed scheduled run sends
+  an alert email.
 
 ## Repository map
 
 ```
-CLAUDE.md              the agent spec: thesis, signals, tripwires, report formats
+CLAUDE.md              agent spec: thesis, signals, tripwires, report formats
 fetch_data.py          market data + VIX via yfinance → data/snapshot.json
-generate_brief.py      weekly deep brief + the shared signal-state machinery
-daily_pulse.py         daily tripwire pulse (imports the shared machinery)
+generate_brief.py      weekly brief + the shared signal-state machinery
+daily_pulse.py         daily pulse (imports the shared machinery)
 send_email.py          delivers the latest report via Gmail (HTML + plaintext)
 send_alert.py          emails the owner when a scheduled run fails
 run_daily.sh / run_weekly.sh / run_scheduled.sh    pipeline runners (launchd-ready)
@@ -79,9 +113,9 @@ run_daily.sh / run_weekly.sh / run_scheduled.sh    pipeline runners (launchd-rea
 portfolio.example.md   template for the (gitignored) positions file
 ```
 
-Personal data never enters the repo: positions live in a gitignored
-`portfolio.md` spliced into the prompt at generation time, and credentials
-live in a gitignored `.env`.
+Personal data stays out of the repo: positions live in a gitignored
+`portfolio.md` that is spliced into the prompt at generation time, and
+credentials live in a gitignored `.env`.
 
 ## Setup
 
@@ -100,13 +134,6 @@ python send_email.py        # email the latest report
 For unattended runs, point `launchd` (or cron) at `run_scheduled.sh`, which
 loads `.env` and hands off to the tier runner — weekly on Mondays, daily the
 rest of the trading week.
-
-## Roadmap
-
-- **Cockpit** — a read-only web dashboard over the same state files
-  (signal trajectories, headline log, report archive), served privately via
-  Tailscale. The email stays the push channel; the cockpit becomes the pull
-  channel.
 
 ## Disclaimer
 

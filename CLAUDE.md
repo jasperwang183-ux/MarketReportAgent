@@ -1,5 +1,5 @@
 # CLAUDE.md — ETF Research Agent
-# Last updated: June 2026
+# Last updated: July 2026
 # Read this file at the start of every session.
 
 ---
@@ -17,8 +17,8 @@ Delivers via Gmail.
   action items, events, Radar. Runs the full search sweep across all signals.
 
   **DAILY pulse** (`daily_pulse.py`, Sonnet) — lean tripwire check: holdings
-  quick read + kill-signal / Iran-exit check. Shouts only when a tripwire trips
-  or a holding moves materially. On a quiet day it's a short heartbeat.
+  quick read + kill-signal / Iran-exit check. Alerts only when a tripwire trips
+  or a holding moves materially. On a quiet day it stays short.
 
 Both tiers read the same market snapshot (`data/snapshot.json` from
 `fetch_data.py`) and the same thesis spec (this file). The daily imports the
@@ -75,11 +75,18 @@ its full contents in below. When working in this repo interactively, read
 
 ---
 
-## MASTER INVESTMENT THESIS: AI INFRASTRUCTURE STACK
+## INVESTMENT THESIS: AI INFRASTRUCTURE STACK
 
-Core belief: AI is improving exponentially on the software side. The bottleneck
+The idea: AI is improving quickly on the software side, so the bottleneck
 will increasingly shift from software to physical infrastructure. Own the
 infrastructure layers — compute, memory bandwidth, and power — not the apps.
+
+Each layer carries one or more kill signals. A kill signal is a numeric
+condition, written down in advance, under which that layer's thesis should be
+considered wrong. Every report checks every signal and reports its status
+(CLEAR / APPROACHING / TRIGGERED) plus how far the current reading is from
+the trigger. The definitions live with their layers below; the thresholds are
+collected in the APPROACHING Tripwire Thresholds block.
 
 ### Layer 1 — Compute / Silicon
 Thesis: AI accelerator demand outstrips supply through 2027+. TSMC manufacturing
@@ -90,9 +97,9 @@ Holdings: SMH (both accounts). (SOXL exited 2026-07 — IRA leverage now via TQQ
 (What to monitor for this layer lives in the MONITORING MAP section below —
 one canonical list across all layers.)
 
-#### Layer 1 Kill Signal — AS-1 ASIC Substitution — CHECK EVERY REPORT
-Same CLEAR / APPROACHING / TRIGGERED discipline and proximity quantification
-as the memory kill signals; reported in the same kill-signal table.
+#### Layer 1 Kill Signal — AS-1 ASIC Substitution (checked every report)
+Uses the same CLEAR / APPROACHING / TRIGGERED statuses and proximity
+quantification as the memory kill signals; reported in the same table.
 
   AS-1: NVIDIA data-center revenue growth <20% YoY, OR revenue QoQ negative
         for 2 consecutive quarters
@@ -107,7 +114,7 @@ as the memory kill signals; reported in the same kill-signal table.
          shift. QoQ leg tracked numerically in signal state, same machinery
          as KS-1/KS-4.)
 
-### Layer 2 — Memory Bandwidth — HIGHEST CONVICTION
+### Layer 2 — Memory Bandwidth (highest conviction)
 Thesis: Binding AI constraint is memory bandwidth, not compute FLOPS. Context
 window explosion (8K to 1M tokens = 125x KV cache growth) plus HBM 3-to-1
 wafer trade-off create structural supply tightness through 2027. DRAM oligopoly
@@ -117,12 +124,15 @@ not seen in 30 years. Memory trading at ~8x forward vs 25-35x peer semis.
 Holdings: DRAM (both accounts) — SK Hynix 25.4% + Samsung 23.64% + MU 24.17%
           EWY — Korea proxy, SK Hynix + Samsung = ~45% of EWY weight
 
-#### Memory Kill Signals — CHECK EVERY REPORT
-Flag each as: CLEAR / APPROACHING / TRIGGERED
+#### Memory Kill Signals (checked every report)
+Each signal is reported as one of three statuses:
+  CLEAR       — not near its tripwire
+  APPROACHING — past its tripwire but below the kill condition
+  TRIGGERED   — the kill condition is fully met
 
 Each signal carries a plain-language "tracks:" gloss so the report is readable
-without memorizing the KS-n codes. ALWAYS spell out what a signal tracks in the
-report — never present a bare "KS-3" with no explanation.
+without memorizing the KS-n codes. Always spell out what a signal tracks in
+the report — never present a bare code like "KS-3" with no explanation.
 
   KS-1: DRAM spot price -10% for 3 consecutive months
         (tracks: spot price of commodity DRAM chips — the core memory product)
@@ -147,21 +157,22 @@ report — never present a bare "KS-3" with no explanation.
         (tracks: helium spot price — a fab input vulnerable to Iran conflict; a
          spike signals Korean fab supply-chain stress)
 
-  QUANTIFY PROXIMITY every report. Don't just say CLEAR — say how far from
-  trigger, using whatever current value web search returns. Express as
-  "% of kill" (current ÷ trigger threshold) and/or absolute distance. Examples:
+  Quantify proximity in every report. A status on its own isn't enough — also
+  say how far the current reading is from the trigger, using whatever current
+  value web search returns. Express as "% of kill" (current ÷ trigger
+  threshold) and/or absolute distance. Examples:
     KS-W: helium $144.58 vs $300 trigger = 48% of kill (CLEAR, lots of room)
     KS-5: SK Hynix DRAM OPM 72% vs 60% floor = 12 pts above trigger (CLEAR)
     KS-1: DRAM spot -3% MoM, month 1 of 3 needed at -10% = far from trigger
-  The numeric distance is what makes APPROACHING meaningful. State the number,
-  not a vibe. TRIGGERED = the full kill condition is satisfied.
+  The numeric distance is what makes the statuses meaningful — always state
+  the number.
 
-#### APPROACHING Tripwire Thresholds — TUNABLE (edit these freely)
-These per-signal thresholds define the line between CLEAR and APPROACHING. They
-are the control dial for the two-tier system:
-  → DAILY watchdog reads them to decide whether to escalate (alert) or stay
-    quiet — a signal at/past its tripwire is what makes the daily "shout".
-  → WEEKLY brief uses them to rank which signal is closest to firing.
+#### APPROACHING Tripwire Thresholds — tunable (edit these freely)
+These per-signal thresholds define the line between CLEAR and APPROACHING.
+They are the control dial for the two-tier system:
+  → The DAILY pulse reads them to decide whether to alert or stay quiet — a
+    signal at/past its tripwire is what makes the daily alert.
+  → The WEEKLY brief uses them to rank which signal is closest to firing.
 Tighten a tripwire to get earlier warnings (noisier daily); loosen it for fewer
 alerts (quieter daily). Each line is: TRIGGER (kill) | APPROACHING (tripwire).
 
@@ -190,11 +201,11 @@ alerts (quieter daily). Each line is: TRIGGER (kill) | APPROACHING (tripwire).
   If a signal's current value isn't available from search, mark "no fresh data"
   and report the last known reading rather than guessing.
 
-### Layer 3 — Power / Grid — KNOWN GAP
+### Layer 3 — Power / Grid (known gap)
 Thesis: AI datacenter buildout outpacing grid capacity. Nuclear revival and
 grid modernization are multi-year tailwinds independent of Iran conflict.
-Current exposure: STARTER ONLY — small GRID position (taxable) added 2026-07.
-Gap: Materially underweight vs thesis conviction; no nuclear/uranium exposure
+Current exposure: a small starter GRID position (taxable), added 2026-07.
+Gap: materially underweight vs thesis conviction; no nuclear/uranium exposure
 (NLR/URNM/URA all unowned).
 Agent instruction: Flag the remaining underweight in every report. Candidates
 live in the
@@ -408,14 +419,14 @@ news yet. Search the following:
 
 ### Source + Confidence Tagging
 Every searched claim carries a tag: [source1, source2][confidence — basis].
-This makes trust a first-class, scannable input — you size trades off this
-report, so each line should say how much to trust it and what would change that.
+Trades are sized off this report, so each line should say how much to trust
+it and what would change that.
 
   Format:  [Reuters, Bloomberg, TrendForce][high — multiple independent]
            [VideoCardz][med — single source, formal spec pending]
            [no source — inferred from price action][low]
 
-  Confidence levels (DO NOT inflate — LLMs drift everything to "high"):
+  Confidence levels (do not inflate — LLMs drift everything to "high"):
     high = 2+ independent reputable sources agree
     med  = single source, OR sources tracing to one origin, OR a reputable
            source on a still-developing / unconfirmed story
@@ -624,10 +635,10 @@ individual stocks directly.
 
 ## DAILY PULSE STRUCTURE (Sonnet — `daily_pulse.py`)
 
-Lean tripwire check. NOT the full weekly brief. Its job is to (1) give a
+Lean tripwire check, not the full weekly brief. Its job is to (1) give a
 20-second read on how held positions moved since the prior session, and
 (2) check every kill signal + the Iran exit against the APPROACHING Tripwire
-Thresholds, and SHOUT only if something crosses a tripwire or a holding moved
+Thresholds, and alert only if something crosses a tripwire or a holding moved
 materially. On a quiet day it should be short and say so.
 
 Do NOT reproduce the weekly's 9 sections, company-by-company intelligence,
@@ -750,7 +761,7 @@ Potential Buys cycling, or Radar — that all lives in the weekly Opus brief.
     argument tied to a kill signal where one exists — no generic hedging
 
 ### Daily-Only Rules
-18. Exception-based — SHOUT on tripwire crossings and material movers, stay
+18. Exception-based — alert on tripwire crossings and material movers, stay
     short and quiet on normal days
 19. Search budget capped: ≤2 dedicated searches (KS-1 DRAM spot + KS-W helium),
     +1 escalation search on the morning after a hyperscaler earnings report
