@@ -183,10 +183,47 @@ WEB_TOOLS = [
 # Cap on pause_turn resumptions (server tool loop hits its iteration limit).
 MAX_CONTINUATIONS = 6
 
+# Stream-stall protection. Server-side web search can leave the stream silent
+# long enough to trip the SDK's default 600s read timeout — the recurring 6am
+# "ReadTimeout: The read operation timed out" failures (2026-07-02/08/14/15/16)
+# were all this. Widen the read window and retry a stalled request instead of
+# dying on the first stall. Both tiers use these via _stream_final_message().
+STREAM_TIMEOUT_S = 1200   # per-read window passed to the httpx client
+STREAM_ATTEMPTS = 3       # total tries per request (1 initial + 2 retries)
+STREAM_RETRY_WAIT_S = 30
+
 
 def die(msg: str, code: int = 1) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(code)
+
+
+def _stream_final_message(client, kwargs: dict):
+    """messages.stream + get_final_message, retrying on stream stalls.
+
+    A timed-out streaming request is safe to re-send wholesale — nothing is
+    committed server-side that the resend conflicts with (worst case we pay
+    for the abandoned partial). Non-timeout errors propagate to the caller's
+    normal handling.
+    """
+    import anthropic
+    import httpx
+    import time
+
+    for attempt in range(1, STREAM_ATTEMPTS + 1):
+        try:
+            with client.messages.stream(**kwargs) as stream:
+                return stream.get_final_message()
+        except (anthropic.APITimeoutError, httpx.TimeoutException) as exc:
+            if attempt == STREAM_ATTEMPTS:
+                raise
+            print(
+                f"WARNING: stream timed out ({type(exc).__name__}) — "
+                f"retrying in {STREAM_RETRY_WAIT_S}s "
+                f"(attempt {attempt}/{STREAM_ATTEMPTS})…",
+                file=sys.stderr,
+            )
+            time.sleep(STREAM_RETRY_WAIT_S)
 
 
 def load_snapshot() -> dict:
@@ -1012,7 +1049,12 @@ def call_claude(prompt: str) -> str:
         )
         sys.exit(2)
 
-    client = anthropic.Anthropic(api_key=api_key)
+    import httpx
+
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        timeout=httpx.Timeout(STREAM_TIMEOUT_S, connect=5.0),
+    )
     messages = [{"role": "user", "content": prompt}]
 
     # Stream the call (avoids HTTP timeouts on long, search-heavy runs) and use
@@ -1037,8 +1079,7 @@ def call_claude(prompt: str) -> str:
             if container_id is not None:
                 kwargs["container"] = container_id
 
-            with client.messages.stream(**kwargs) as stream:
-                resp = stream.get_final_message()
+            resp = _stream_final_message(client, kwargs)
 
             # Carry the container forward for any subsequent continuation.
             container = getattr(resp, "container", None)

@@ -51,6 +51,8 @@ from generate_brief import (
     merge_model_signals,
     save_signal_state,
     strip_signal_block,
+    STREAM_TIMEOUT_S,
+    _stream_final_message,
 )
 
 # Sonnet for the daily — a fraction of Opus cost and plenty for a quick read +
@@ -196,7 +198,12 @@ def call_claude(prompt: str) -> str:
         )
         sys.exit(2)
 
-    client = anthropic.Anthropic(api_key=api_key)
+    import httpx
+
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        timeout=httpx.Timeout(STREAM_TIMEOUT_S, connect=5.0),
+    )
     messages = [{"role": "user", "content": prompt}]
 
     resp = None
@@ -214,8 +221,7 @@ def call_claude(prompt: str) -> str:
             if container_id is not None:
                 kwargs["container"] = container_id
 
-            with client.messages.stream(**kwargs) as stream:
-                resp = stream.get_final_message()
+            resp = _stream_final_message(client, kwargs)
 
             container = getattr(resp, "container", None)
             if container is not None and getattr(container, "id", None):
